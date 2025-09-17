@@ -1,6 +1,7 @@
 use crate::poh::{Hash, Entry, verify_entry};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Slot { // block
     pub slot: u64,
     pub last_hash: Hash,

@@ -1,8 +1,9 @@
 use sha2::{Sha256, Digest};
+use serde::{Serialize, Deserialize};
 
 pub type Hash = [u8; 32];
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Entry { // transaction
     pub num_hashes: u64,
     pub hash: Hash,
