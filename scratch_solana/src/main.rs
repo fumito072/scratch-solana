@@ -1,19 +1,30 @@
 use sha2::{Sha256, Digest};
 
 type Hash = [u8; 32];
+type NodeId = String;
 
 #[derive(Clone, Debug)]
-struct Entry {
+struct Entry { // transaction
     num_hashes: u64,
     hash: Hash,
     payload: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]
-struct Slot {
+struct Slot { // block
     slot: u64,
     last_hash: Hash,
     entries: Vec<Entry>,
+}
+
+#[derive(Clone, Debug)]
+struct EntrySpec {
+    num_hashes: u64,
+    payload: Option<Vec<u8>>,
+}
+
+struct LeaderSchedule {
+    order: Vec<NodeId>,
 }
 
 fn hash_once(prev: &Hash, mixin: Option<&[u8]>) -> Hash {
@@ -72,6 +83,42 @@ fn verify_slot(prev: &Hash, slot: &Slot) -> bool {
         i += 1;
     }
     curr == slot.last_hash
+}
+
+fn make_entry_from_spec(prev: &Hash, spec: &EntrySpec) -> Entry {
+    let mut curr: Hash = *prev;
+
+    let mut i: u64 = 0;
+    while i + 1 < spec.num_hashes {
+        curr = hash_once(&curr, None);
+        i += 1;
+    }
+
+    let final_hash = match spec.payload.as_deref() {
+        Some(p) => hash_once(&curr, Some(p)),
+        None => hash_once(&curr, None),
+    };
+
+    Entry {
+        num_hashes: spec.num_hashes,
+        hash: final_hash,
+        payload: spec.payload.clone(),
+    }
+}
+
+fn produce_slot(prev: &Hash, slot_id: u64, specs: &[EntrySpec]) -> Slot {
+    let mut curr: Hash = *prev;
+    let mut entries: Vec<Entry> = Vec::with_capacity(specs.len());
+
+    let mut i: usize = 0;
+    while i < specs.len() {
+        let e = make_entry_from_spec(&curr, &specs[i]);
+        curr = e.hash;
+        entries.push(e);
+        i += 1;
+    }
+
+    Slot { slot: slot_id, last_hash: curr, entries }
 }
 
 fn main() {
