@@ -1,5 +1,6 @@
 pub type NodeId = String;
 
+#[derive(Clone, Debug)]
 pub struct LeaderSchedule {
     pub order: Vec<NodeId>,
 }

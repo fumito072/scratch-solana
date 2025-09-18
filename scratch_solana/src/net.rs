@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use futures_util::{StreamExt, SinkExt};
-use tokio::{net::TcpListener, sync::broadcast};
+use tokio::{net::TcpListener, sync::broadcast, sync::mpsc};
 use serde::{Serialize, Deserialize};
 
 use crate::poh::Hash;
@@ -16,6 +16,7 @@ use crate::slot::Slot;
 pub struct NetState {
     pub node_id: String,
     pub tx: broadcast::Sender<String>,
+    pub app_tx: mpsc::Sender<NetMsg>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,10 +43,10 @@ pub fn router(state: NetState) -> Router {
 }
 
 async fn ws_handler(State(state): State<Arc<NetState>>, ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| we_on_upgrade(state, socket))
+    ws.on_upgrade(move |socket| ws_on_upgrade(state, socket))
 }
 
-async fn we_on_upgrade(state: Arc<NetState>, socket: WebSocket) {
+async fn ws_on_upgrade(state: Arc<NetState>, socket: WebSocket) {
     let hello = NetMsg::Hello { node_id: state.node_id.clone() }.to_json();
 
     let mut rx = state.tx.subscribe();
@@ -66,19 +67,23 @@ async fn we_on_upgrade(state: Arc<NetState>, socket: WebSocket) {
         })
     };
 
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = ws_rx.next().await {
-            match msg {
-                WsMessage::Text(s) => {
-                    if let Some(m) = NetMsg::from_json(&s) {
-                        tracing::info!("received: {:?}", m);
+    let mut recv_task = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            while let Some(Ok(msg)) = ws_rx.next().await {
+                match msg {
+                    WsMessage::Text(s) => {
+                        if let Some(m) = NetMsg::from_json(&s) {
+                            tracing::info!("received: {:?}", m);
+                            let _ = state.app_tx.send(m).await;
+                        }
                     }
+                    WsMessage::Close(_) => break,
+                    _ => {}
                 }
-                WsMessage::Close(_) => break,
-                _ => {}
             }
-        }
-    });
+        })
+    };
 
     tokio::select! {
         _ = (&mut send_task) => { recv_task.abort(); }
